@@ -1,10 +1,10 @@
-import type { SceneObjectFactory } from "../types";
+import type { SceneObjectFactory } from "@/types";
 
 // Import factories explicitly.
 // This ensures they are part of the bundle and avoids issues with dynamic imports in some environments.
-import PalletFactory from "../objects/Pallet";
-import ConveyorFactory from "../objects/Conveyor";
-import UR5eRobotFactory from "../objects/UR5eRobot";
+import PalletFactory from "@/objects/Pallet";
+import ConveyorFactory from "@/objects/Conveyor";
+import UR5eRobotFactory from "@/objects/UR5eRobot";
 // Import other object factories here as they are created:
 // import AnotherObjectFactory from "../objects/AnotherObject";
 

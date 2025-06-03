@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import type { SceneObjectFactory, ObjectParameters } from "../types";
-import { applyObjectParameters } from "../utils/objectUtils";
+import type { SceneObjectFactory, ObjectParameters } from "@/types";
+import { applyObjectParameters } from "@/utils/objectUtils";
 
 const DEFAULT_CONVEYOR_LENGTH = 1.2;
 const DEFAULT_CONVEYOR_WIDTH = 0.4;

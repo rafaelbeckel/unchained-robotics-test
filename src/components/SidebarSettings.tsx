@@ -1,5 +1,5 @@
 import { css } from "../../styled-system/css";
-import { PanelConfig } from "./PanelConfig";
+import { PanelConfig } from "@/components/PanelConfig";
 
 interface SidebarSettingsProps {
   showConfig: boolean;

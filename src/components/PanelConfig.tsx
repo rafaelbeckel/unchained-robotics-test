@@ -1,5 +1,5 @@
 import { css } from "../../styled-system/css";
-import { ToggleControl } from "./ToggleControl";
+import { ToggleControl } from "@/components/ToggleControl";
 
 interface PanelConfigProps {
   gridVisible: boolean;

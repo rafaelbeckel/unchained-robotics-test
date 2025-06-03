@@ -1,8 +1,8 @@
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as THREE from "three";
 import type { Object3D, AnimationMixer } from "three";
-import type { SceneObjectFactory, ObjectParameters } from "../types";
-import { applyObjectParameters } from "../utils/objectUtils";
+import type { SceneObjectFactory, ObjectParameters } from "@/types";
+import { applyObjectParameters } from "@/utils/objectUtils";
 
 const DEFAULT_ROBOT_POSITION: [number, number, number] = [0, 0, 0];
 const DEFAULT_ROBOT_MODEL_PATH = "/UR5e.gltf";

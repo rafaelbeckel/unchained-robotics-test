@@ -1,11 +1,10 @@
 import { useSignalEffect } from "@preact/signals";
 import { useState } from "preact/hooks";
-import { ObjectList } from "../components/ObjectList";
-import { ObjectProperties } from "../components/ObjectProperties";
-import { SidebarContainer } from "../components/SidebarContainer";
-import { SidebarSettings } from "../components/SidebarSettings";
+import { ObjectList } from "@/components/ObjectList";
+import { ObjectProperties } from "@/components/ObjectProperties";
+import { SidebarContainer } from "@/components/SidebarContainer";
+import { SidebarSettings } from "@/components/SidebarSettings";
 import { Signal } from "@preact/signals";
-import { css } from "../../styled-system/css";
 
 interface PanelProps {
   state: any;

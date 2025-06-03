@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import type { SceneObjectFactory, ObjectParameters } from "../types";
-import { applyObjectParameters } from "../utils/objectUtils";
+import type { SceneObjectFactory, ObjectParameters } from "@/types";
+import { applyObjectParameters } from "@/utils/objectUtils";
 
 const DEFAULT_PALLET_WIDTH = 0.4;
 const DEFAULT_PALLET_HEIGHT = 0.1;

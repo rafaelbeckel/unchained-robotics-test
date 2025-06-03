@@ -1,4 +1,4 @@
-import "../styled-system/styles.css";
+import "@/../styled-system/styles.css";
 import {
   setupRenderer,
   getScene,
@@ -9,12 +9,12 @@ import {
   getComposer,
   updateOutlinePassSelection,
   updateRendererSize as updateCoreRendererSize,
-} from "./core/renderer";
-import "./core/objectRegistry";
-import { loadSceneFromFile } from "./core/sceneManager";
+} from "@/core/renderer";
+import "@/core/objectRegistry";
+import { loadSceneFromFile } from "@/core/sceneManager";
 import { render } from "preact";
-import { Panel } from "./ui/panel";
-import { state } from "./ui/state";
+import { Panel } from "@/ui/panel";
+import { state } from "@/ui/state";
 import * as THREE from "three";
 import { ViewportGizmo } from "three-viewport-gizmo";
 import { signal } from "@preact/signals";

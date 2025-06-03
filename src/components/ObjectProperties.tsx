@@ -1,5 +1,5 @@
 import { css } from "../../styled-system/css";
-import { InputControl } from "./InputControl";
+import { InputControl } from "@/components/InputControl";
 
 interface ObjectPropertiesProps {
   selected: any;
