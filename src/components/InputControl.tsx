@@ -62,10 +62,7 @@ export function InputControl({
         type={type}
         id={id}
         step={step}
-        // Note: For controlled inputs with Preact/React, you'd typically pass `value` prop.
-        // The current setup modifies DOM input value directly in panel.tsx's useSignalEffect.
-        // This component is structured to support that, but `value` prop is available if needed for controlled components.
-        onInput={onChange} // Changed from onInput to match original onPosChange
+        onInput={onChange}
         disabled={disabled}
         class={css({
           minWidth: minWidthInput,

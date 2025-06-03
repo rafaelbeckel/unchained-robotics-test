@@ -18,7 +18,6 @@ export function Panel({ state, sidebarCollapsed }: PanelProps) {
   const selected = state.selected;
   const [showConfig, setShowConfig] = useState(false);
 
-  // Update input fields when selection changes
   useSignalEffect(() => {
     if (!selected.value) return;
     const { x, y, z } = selected.value.position;
@@ -36,7 +35,6 @@ export function Panel({ state, sidebarCollapsed }: PanelProps) {
     ).textContent = selected.value.name;
   });
 
-  // Handle position input changes
   function onPosChange(axis: string, e: Event) {
     if (!selected.value) return;
     const v = parseFloat((e.target as HTMLInputElement).value);
@@ -45,7 +43,6 @@ export function Panel({ state, sidebarCollapsed }: PanelProps) {
     }
   }
 
-  // For toggles, use signals for reactivity
   const gridVisible = state.gridVisible;
   const gizmoVisible = state.gizmoVisible;
 
