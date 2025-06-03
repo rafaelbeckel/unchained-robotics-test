@@ -10,7 +10,6 @@ import { css } from "../../styled-system/css";
 interface PanelProps {
   state: any;
   sidebarCollapsed: Signal<boolean>;
-  // onReloadScene: () => void;
 }
 
 const DEFAULT_POSITION_FIXED_DIGITS = 2;
@@ -95,38 +94,6 @@ export function Panel({ state, sidebarCollapsed }: PanelProps) {
             selected={selected.value}
             onPosChange={onPosChange}
           />
-          {/* Reload Scene Button */}
-          {/*
-          <button
-            onClick={() => {
-              if (
-                confirm(
-                  "Are you sure you want to reload the scene from scene.json? All unsaved changes to object positions will be lost."
-                )
-              ) {
-                // onReloadScene();
-              }
-            }}
-            title="Reload scene from scene.json"
-            class={css({
-              mt: 2,
-              p: 2,
-              width: "100%",
-              bg: "token(colors.blue.500)",
-              color: "white",
-              border: "none",
-              borderRadius: "md",
-              cursor: "pointer",
-              _hover: { bg: "token(colors.blue.600)" },
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 1,
-            })}
-          >
-            <i class="fa-solid fa-arrows-rotate"></i> Reload Scene
-          </button>
-          */}
         </>
       )}
       <SidebarSettings

@@ -36,7 +36,6 @@ const UR5eRobotFactory: SceneObjectFactory = {
         },
         undefined,
         (error) => {
-          console.error(`Error loading GLTF model from ${modelPath}:`, error);
           reject(error);
         }
       );

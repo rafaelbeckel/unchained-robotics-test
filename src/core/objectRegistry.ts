@@ -12,7 +12,6 @@ const objectFactories = new Map<string, SceneObjectFactory>();
 
 export function registerObjectFactory(type: string, factory: SceneObjectFactory) {
   if (objectFactories.has(type)) {
-    // console.warn(`Object factory type "${type}" is already registered. Overwriting.`);
   }
   objectFactories.set(type, factory);
 }

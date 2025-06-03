@@ -9,26 +9,15 @@ Build a browser-based interactive viewer to visualize an automation robot cell u
 
 [Original Task Description File](3D_Coding_Challenge_Senior_Frontend.pdf)
 
+### Time Spent
+
+About 6 hours divided across two days (3 hours each). I plan to revisit it today later to refine the UI and double check if I did not miss anything important.
+
 ## Overview
 
-The 3D viewer is built with **Three.js** and **Preact** for the UI, using signals for .
+The 3D viewer is built with **Three.js** for rendering and **Preact** for the UI, using [PandaCSS](https://panda-css.com/) for styling and [preact/signals](https://preactjs.com/guide/v10/signals/) for reactivity.
 
-The project defines a simple `SceneObject` interface with a `create()` method and a name property:
-
-```typescript
-import { Object3D } from "three";
-
-export interface SceneObject {
-  name: string;
-  create(): Object3D | Promise<Object3D>;
-}
-```
-
-Objects implementing this interface define their own strategies for loading the ThreeJS object to the scene. For example, they can load it from a GLB file, compose it from one or more ThreeJS primitives, load it from a data store, S3, or a combination of techniques.
-
-Example implementations are defined inside `src/objects`, for loading a UR5e robot model, a Pallet created from a box, and a conveyour from a group of cylinders and boxes grouped togeteher.
-
-Visualize a UR5e robot (GLTF model) and cell components (conveyor, pallet) with live position editing and a clean, extensible architecture.
+The application loads its scene definition from a JSON file (`public/scene.json`), which specifies the objects, their types, parameters, and initial positions. Each object type is implemented as a factory in `src/objects/` and registered in `src/core/objectRegistry.ts`. This makes the architecture highly extensible and modular.
 
 ---
 
@@ -72,17 +61,54 @@ Visualize a UR5e robot (GLTF model) and cell components (conveyor, pallet) with 
 
 ## Architecture Overview
 
-- **core/renderer.ts**: Sets up Three.js scene, camera, renderer, and lighting.
-- **core/loader.ts**: Loads the UR5e robot model (from `/public/UR5e.gltf`) and adds primitives (conveyor, pallet).
-- **ui/panel.tsx**: Preact sidebar UI for object list, selection, and position editing.
-- **ui/state.tsx**: Preact Signals for reactive app state (scene objects, selection).
-- **main.tsx**: App entry point. Initializes Three.js, loads models, mounts UI, and runs the animation loop.
+- **src/core/renderer.tsx**: Sets up the Three.js scene, camera, renderer, lighting, controls, and postprocessing (outline, FXAA).
+- **src/core/sceneManager.ts**: Loads and processes the scene definition from JSON, instantiates objects using registered factories, and applies parameters.
+- **src/core/objectRegistry.ts**: Registers all available object factories (Robot, Pallet, Conveyor) for use in the scene.
+- **src/objects/**: Contains modular object factories. Each factory implements a `create(params)` method returning a Three.js Object3D.
+- **src/ui/panel.tsx**: Implements the sidebar components.
+- **src/ui/state.tsx**: Centralized reactive state for objects, selection, and UI toggles.
+- **src/components/**: Reusable UI components for the sidebar (object list, property editor, toggles, etc.).
+- **src/utils/objectUtils.ts**: Utility for applying position, rotation, scale, and name parameters to Three.js objects.
+- **public/scene.json**: Scene definition file specifying all objects, their types, parameters, and initial state.
 - **public/UR5e.gltf**: The robot model (ensure this file is present).
+- **styled-system/**: PandaCSS configuration and generated styles for consistent, themeable UI.
 
-### Extensibility
+### Scene Definition & Extensibility
 
-- Add new robot types or cell components by extending `core/loader.ts` and `core/objects.ts`.
-- Future modules can add kinematics, simulation, or external system integration (e.g., OPC-UA).
+- The scene is defined in `public/scene.json`:
+
+  - Each object has an `id`, `type` (e.g., "UR5eRobot", "Pallet", "Conveyor"), `name`, and `parameters` (position, rotation, scale, and type-specific options).
+  - Example:
+
+    ```json
+    {
+      "id": "robot1",
+      "type": "UR5eRobot",
+      "name": "UR5e Robot Arm",
+      "parameters": {
+        "modelPath": "/UR5e.gltf",
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      }
+    }
+    ```
+
+- To add new object types, create a new factory in `src/objects/`, register it in `src/core/objectRegistry.ts`, and reference it by type in `scene.json`.
+- Factories can load models (GLTF, primitives, etc.), set up animations, and apply parameters from the scene definition.
+
+### UI Components
+
+- **Sidebar**: Lists all scene objects, allows selection, and provides position editing for the selected object.
+- **Settings**: Toggle grid and viewport gizmo visibility.
+- **Responsive**: Sidebar can be collapsed/expanded.
+- **Live Editing**: Changes to object positions are immediately reflected in the 3D view.
+
+### Styling
+
+- Uses [PandaCSS](https://panda-css.com/) for utility-first, themeable styling.
+- All UI components are styled using PandaCSS classes and tokens.
+- Object outline implemented as a post-processing effect
 
 ---
 
@@ -304,17 +330,14 @@ import {
   updateOutlinePassSelection,
   updateRendererSize as updateCoreRendererSize,
 } from "./core/renderer";
-// import { getAllSceneObjects } from "./core/loader"; // No longer used for primary loading
-import "./core/objectRegistry"; // IMPORTANT: Ensures factories are registered on startup
+import "./core/objectRegistry";
 import { loadSceneFromFile } from "./core/sceneManager";
-// import { getRobotMixer } from "./objects/UR5eRobot"; // No longer exists / needed globally
 import { render } from "preact";
 import { Panel } from "./ui/panel";
 import { state } from "./ui/state";
 import * as THREE from "three";
 import { ViewportGizmo } from "three-viewport-gizmo";
-import { signal, useSignalEffect } from "@preact/signals";
-import type { SceneInstance } from "./types";
+import { signal } from "@preact/signals";
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [2, 2, 4];
 const DEFAULT_CAMERA_LOOKAT: [number, number, number] = [0, 0.5, 0];
@@ -329,21 +352,17 @@ const GRID_HELPER_COLOR_GRID = 0xd0d0d0;
 const AXES_HELPER_SIZE = 0.5;
 const AXES_HELPER_Y_OFFSET = 0.001;
 
-// Sidebar collapsed state (shared between main and Panel)
 export const sidebarCollapsed = signal(false);
-// export const reloadSceneTrigger = signal(0); // Signal to trigger scene reload
 
-// Setup ThreeJS renderer, scene, camera
 setupRenderer();
 
-// Function to dispose of an Object3D and its descendants
 function disposeObject(object: THREE.Object3D) {
   if (!object) return;
 
-  // Dispose geometries and materials
   if ((object as any).geometry) {
     (object as any).geometry.dispose();
   }
+
   if ((object as any).material) {
     if (Array.isArray((object as any).material)) {
       (object as any).material.forEach((material: THREE.Material) =>
@@ -354,20 +373,16 @@ function disposeObject(object: THREE.Object3D) {
     }
   }
 
-  // Recursively dispose children
   if (object.children) {
-    object.children.slice().forEach((child) => disposeObject(child)); // Use slice to avoid modifying array while iterating
+    object.children.slice().forEach((child) => disposeObject(child));
   }
 
-  // If the object has a mixer (e.g., robot), stop all actions
   if (
     object.userData.mixer &&
     typeof object.userData.mixer.stopAllAction === "function"
   ) {
     object.userData.mixer.stopAllAction();
   }
-  // We don't explicitly dispose the mixer itself, Three.js might handle it or it might not be necessary
-  // if the object holding it is removed from scene and JS garbage collection takes over.
 }
 
 const isHelperObject = (object: THREE.Object3D, camera: THREE.Camera) => {
@@ -380,14 +395,8 @@ const isHelperObject = (object: THREE.Object3D, camera: THREE.Camera) => {
   );
 };
 
-async function loadAndPopulateScene() {
-  const scene = getScene();
-  const camera = getCamera();
-  const controls = getControls();
-
-  // 1. Clear existing objects from the scene and state
-  const objectsToRemove = [...state.objects.value]; // Create a copy for iteration
-
+function clearSceneAndState(scene: THREE.Scene, camera: THREE.Camera) {
+  const objectsToRemove = [...state.objects.value];
   if (objectsToRemove.length > 0) {
     console.log(
       `[SCENE RELOAD] Clearing ${objectsToRemove.length} old objects.`
@@ -399,8 +408,6 @@ async function loadAndPopulateScene() {
       disposeObject(obj);
       scene.remove(obj);
     });
-
-    // Verify actual scene children after removal
     const remainingSceneObjects = scene.children.filter(
       (c) => !isHelperObject(c, camera)
     );
@@ -413,32 +420,44 @@ async function loadAndPopulateScene() {
       }))
     );
   }
-
-  state.objects.value = []; // Clear the signal's array
+  state.objects.value = [];
   state.selected.value = null;
-  updateOutlinePassSelection([]); // Clear outline pass selection
+  updateOutlinePassSelection([]);
+}
 
-  // 2. Load new scene definition
+async function fetchSceneDefinition() {
   console.log("[SCENE RELOAD] Fetching new scene definition...");
-  const { sceneInstances, defaultSelectedInstance, sceneSettings } =
-    await loadSceneFromFile("/scene.json");
+  return await loadSceneFromFile("/scene.json");
+}
 
-  // 3. Apply scene settings (e.g., camera)
+function applySceneSettings(
+  camera: THREE.Camera,
+  controls: any,
+  sceneSettings: any
+) {
   if (sceneSettings?.cameraPosition) {
-    camera.position.set(...sceneSettings.cameraPosition);
+    camera.position.set(
+      ...(sceneSettings.cameraPosition as [number, number, number])
+    );
   } else {
     camera.position.set(...DEFAULT_CAMERA_POSITION);
   }
   if (sceneSettings?.cameraLookAt) {
-    camera.lookAt(...sceneSettings.cameraLookAt);
-    controls.target.set(...sceneSettings.cameraLookAt);
+    camera.lookAt(...(sceneSettings.cameraLookAt as [number, number, number]));
+    controls.target.set(
+      ...(sceneSettings.cameraLookAt as [number, number, number])
+    );
   } else {
     camera.lookAt(...DEFAULT_CAMERA_LOOKAT);
     controls.target.set(...DEFAULT_CAMERA_LOOKAT);
   }
   controls.update();
+}
 
-  // 4. Populate scene with new objects
+function populateSceneWithObjects(
+  scene: THREE.Scene,
+  sceneInstances: any[]
+): THREE.Object3D[] {
   const threeObjects: THREE.Object3D[] = [];
   console.log(
     `[SCENE RELOAD] Processing ${sceneInstances.length} instances from new definition.`
@@ -457,8 +476,13 @@ async function loadAndPopulateScene() {
     }
   }
   state.objects.value = [...threeObjects];
+  return threeObjects;
+}
 
-  // 5. Set selected object
+function setSelectedObject(
+  defaultSelectedInstance: any,
+  threeObjects: THREE.Object3D[]
+) {
   if (defaultSelectedInstance && defaultSelectedInstance.object3D) {
     state.selected.value = defaultSelectedInstance.object3D;
   } else if (threeObjects.length > 0) {
@@ -469,6 +493,24 @@ async function loadAndPopulateScene() {
       state.objects.value.length
     }. Selected: ${state.selected.value?.name ?? "None"}`
   );
+}
+
+async function loadAndPopulateScene() {
+  const scene = getScene();
+  const camera = getCamera();
+  const controls = getControls();
+
+  clearSceneAndState(scene, camera);
+
+  const { sceneInstances, defaultSelectedInstance, sceneSettings } =
+    await fetchSceneDefinition();
+
+  applySceneSettings(camera, controls, sceneSettings);
+
+  const threeObjects = populateSceneWithObjects(scene, sceneInstances);
+
+  setSelectedObject(defaultSelectedInstance, threeObjects);
+
   const finalSceneObjects = scene.children.filter(
     (c) => !isHelperObject(c, camera)
   );
@@ -478,7 +520,6 @@ async function loadAndPopulateScene() {
   );
 }
 
-// Update outline pass when selection changes
 state.selected.subscribe((currentSelection) => {
   if (currentSelection) {
     updateOutlinePassSelection([currentSelection]);
@@ -487,32 +528,16 @@ state.selected.subscribe((currentSelection) => {
   }
 });
 
-// Initial load and subscribe to reload trigger
 loadAndPopulateScene();
-// reloadSceneTrigger.subscribe(() => {
-// console.log("Reload scene triggered...");
-// loadAndPopulateScene();
-// });
 
-// Mount Preact sidebar UI
 const uiPanel = document.getElementById("ui-panel");
-render(
-  <Panel
-    state={state}
-    sidebarCollapsed={sidebarCollapsed}
-    // onReloadScene={() => (reloadSceneTrigger.value += 1)}
-  />,
-  uiPanel!
-);
+render(<Panel state={state} sidebarCollapsed={sidebarCollapsed} />, uiPanel!);
 
-// Animation loop
 const clock = new THREE.Clock();
 
-// Viewport Gizmo setup
 let gizmo: any = null;
 function mountGizmo() {
   if (gizmo) {
-    // Remove the gizmo from DOM if it exists
     gizmo.dispose();
     gizmo = null;
   }
@@ -542,7 +567,6 @@ function animate() {
   getControls().update();
   const delta = clock.getDelta();
 
-  // Update animations for objects that have a mixer
   if (state.objects.value && state.objects.value.length > 0) {
     state.objects.value.forEach((obj) => {
       if (
@@ -562,13 +586,12 @@ function animate() {
 }
 animate();
 
-// Remove axesHelper from gizmo toggle, only show with grid
 let gridHelper: THREE.GridHelper | null = null;
 let axesHelper: THREE.AxesHelper | null = null;
 
 function updateHelpers() {
   const scene = getScene();
-  // Grid and axes at origin
+
   if (state.gridVisible.value) {
     if (!gridHelper) {
       gridHelper = new THREE.GridHelper(
@@ -577,39 +600,34 @@ function updateHelpers() {
         GRID_HELPER_COLOR_CENTER_LINE,
         GRID_HELPER_COLOR_GRID
       );
-      gridHelper.position.y = 0; // Ensure it's on the ground plane
+      gridHelper.position.y = 0;
       scene.add(gridHelper);
     }
     if (!axesHelper) {
       axesHelper = new THREE.AxesHelper(AXES_HELPER_SIZE);
-      axesHelper.position.set(0, AXES_HELPER_Y_OFFSET, 0); // Lift slightly to avoid z-fighting with grid
+      axesHelper.position.set(0, AXES_HELPER_Y_OFFSET, 0);
       scene.add(axesHelper);
     }
   } else {
     if (gridHelper) {
       scene.remove(gridHelper);
-      gridHelper.dispose(); // Dispose geometry/material
+      gridHelper.dispose();
       gridHelper = null;
     }
     if (axesHelper) {
       scene.remove(axesHelper);
-      axesHelper.dispose(); // Dispose geometry/material
+      axesHelper.dispose();
       axesHelper = null;
     }
   }
 }
 
 state.gridVisible.subscribe(updateHelpers);
-// Initial helpers
 updateHelpers();
-// Mount gizmo initially
 mountGizmo();
 
-// --- Responsive sidebar logic ---
 function updateSceneSize() {
   const collapsed = sidebarCollapsed.value;
-  // Adjust width: 40px for collapsed (width of SidebarContainer when collapsed)
-  // SIDEBAR_WIDTH (300px) for expanded
   const currentSidebarWidth = collapsed
     ? COLLAPSED_SIDEBAR_WIDTH
     : SIDEBAR_WIDTH;
@@ -619,15 +637,13 @@ function updateSceneSize() {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   getRenderer().setSize(width, height);
-  if (gizmo) gizmo.update(); // Gizmo might need update on resize too
+  if (gizmo) gizmo.update();
 
-  // Call the imported function from renderer.tsx to update core components
   updateCoreRendererSize(width, height);
 }
 
 sidebarCollapsed.subscribe(updateSceneSize);
 window.addEventListener("resize", updateSceneSize);
-// Initial size
 updateSceneSize();
 
 --- End of file: src/main.tsx ---
@@ -1212,11 +1228,11 @@ src/types.ts
 import { Object3D, Vector3, Euler } from "three";
 
 export interface ObjectParameters {
-  position?: number[] | Vector3; // Array [x, y, z] for JSON
-  rotation?: number[] | Euler; // Array [x, y, z] (Euler angles in radians) for JSON
-  scale?: number[] | Vector3;    // Array [x, y, z] for JSON
-  name?: string; // User-defined name for this specific instance, passed to factory
-  [key: string]: any; // For object-specific parameters like modelPath, length, width etc.
+  position?: number[] | Vector3;
+  rotation?: number[] | Euler;
+  scale?: number[] | Vector3;
+  name?: string;
+  [key: string]: any;
 }
 
 export interface SceneObjectFactory {
@@ -1224,15 +1240,14 @@ export interface SceneObjectFactory {
 }
 
 export interface SceneInstanceConfig {
-  id: string;         // Unique ID for this instance in the scene
-  type: string;       // Type of object (e.g., "Pallet", "UR5eRobot"). Maps to a SceneObjectFactory.
-  name?: string;      // Display name for UI. Falls back to id if not provided.
-  parameters?: Omit<ObjectParameters, 'name'>; // Original parameters from JSON, 'name' comes from SceneInstanceConfig.name
+  id: string;
+  type: string;
+  name?: string;
+  parameters?: Omit<ObjectParameters, 'name'>;
 }
 
-// Runtime representation of an object instance in the scene
 export interface SceneInstance extends SceneInstanceConfig {
-  object3D: Object3D; // The actual Three.js object
+  object3D: Object3D;
 }
 
 --- End of file: src/types.ts ---
