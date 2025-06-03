@@ -6,8 +6,6 @@ import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { FXAAShader } from "three/examples/jsm/shaders/FXAAShader.js";
 
-export const SIDEBAR_WIDTH = 300;
-
 const SCENE_BACKGROUND_COLOR = 0x707088;
 const CAMERA_FOV = 45;
 const CAMERA_NEAR_PLANE = 0.1;
@@ -36,12 +34,10 @@ let scene: THREE.Scene,
   outlinePass: OutlinePass,
   effectFXAA: ShaderPass;
 
-export function setupRenderer() {
+export function setupRenderer(initialWidth: number, initialHeight: number) {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(SCENE_BACKGROUND_COLOR);
 
-  const initialWidth = window.innerWidth - SIDEBAR_WIDTH;
-  const initialHeight = window.innerHeight;
   camera = new THREE.PerspectiveCamera(
     CAMERA_FOV,
     initialWidth / initialHeight,

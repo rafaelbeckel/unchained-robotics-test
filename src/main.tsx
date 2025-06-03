@@ -5,7 +5,6 @@ import {
   getCamera,
   getRenderer,
   getControls,
-  SIDEBAR_WIDTH,
   getComposer,
   updateOutlinePassSelection,
   updateRendererSize as updateCoreRendererSize,
@@ -22,6 +21,7 @@ import { signal } from "@preact/signals";
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [2, 2, 4];
 const DEFAULT_CAMERA_LOOKAT: [number, number, number] = [0, 0.5, 0];
 const COLLAPSED_SIDEBAR_WIDTH = 40;
+const SIDEBAR_WIDTH = 300;
 const GIZMO_SIZE = 80;
 const GIZMO_OFFSET_TOP = 16;
 const GIZMO_OFFSET_LEFT = 16;
@@ -34,7 +34,14 @@ const AXES_HELPER_Y_OFFSET = 0.001;
 
 export const sidebarCollapsed = signal(false);
 
-setupRenderer();
+const initialCollapsed = sidebarCollapsed.value;
+const initialSidebarWidth = initialCollapsed
+  ? COLLAPSED_SIDEBAR_WIDTH
+  : SIDEBAR_WIDTH;
+const initialCanvasWidth = window.innerWidth - initialSidebarWidth;
+const initialCanvasHeight = window.innerHeight;
+
+setupRenderer(initialCanvasWidth, initialCanvasHeight);
 
 function disposeObject(object: THREE.Object3D) {
   if (!object) return;
