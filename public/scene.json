@@ -1,0 +1,68 @@
+{
+  "settings": {
+    "defaultSelectedId": "robot1"
+  },
+  "objects": [
+    {
+      "id": "robot1",
+      "type": "UR5eRobot",
+      "name": "UR5e Robot Arm",
+      "parameters": {
+        "modelPath": "/UR5e.gltf",
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      }
+    },
+    {
+      "id": "pallet_A",
+      "type": "Pallet",
+      "name": "Pallet A (Input)",
+      "parameters": {
+        "position": [-0.8, 0.05, 0.5],
+        "scale": [1, 1, 1],
+        "color": 10053120
+      }
+    },
+    {
+      "id": "pallet_B",
+      "type": "Pallet",
+      "name": "Pallet B (Output)",
+      "parameters": {
+        "position": [-0.8, 0.05, -0.5],
+        "rotation": [0, 1.570796, 0],
+        "scale": [1, 1, 1],
+        "width": 0.48,
+        "height": 0.1,
+        "depth": 0.32
+      }
+    },
+    {
+      "id": "mainConveyor",
+      "type": "Conveyor",
+      "name": "Main Conveyor",
+      "parameters": {
+        "position": [1.1, 0.075, 0],
+        "length": 1.5,
+        "width": 0.5,
+        "rollerSpacing": 0.06
+      }
+    },
+    {
+      "id": "smallConveyor",
+      "type": "Conveyor",
+      "name": "Side Conveyor - Custom Spacing",
+      "parameters": {
+        "position": [0, 0.1, -1.0],
+        "rotation": [0, 1.570796, 0],
+        "length": 0.8,
+        "width": 0.5,
+        "rollerSpacing": 0.06,
+        "rollerColor": 16711680,
+        "showGuardRails": true,
+        "baseHeight": 0.08,
+        "rollerPositionY": 0.06
+      }
+    }
+  ]
+}

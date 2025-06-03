@@ -1,0 +1,1676 @@
+README.md
+
+--- Start of file: README.md ---
+# Interactive 3D Robot Cell Viewer (Rafael Beckel)
+
+## Task Description
+
+Build a browser-based interactive viewer to visualize an automation robot cell using a real 3D robot model (e.g., UR5) and primitives for other components.
+
+[Original Task Description File](3D_Coding_Challenge_Senior_Frontend.pdf)
+
+## Overview
+
+The 3D viewer is built with **Three.js** and **Preact** for the UI, using signals for .
+
+The project defines a simple `SceneObject` interface with a `create()` method and a name property:
+
+```typescript
+import { Object3D } from "three";
+
+export interface SceneObject {
+  name: string;
+  create(): Object3D | Promise<Object3D>;
+}
+```
+
+Objects implementing this interface define their own strategies for loading the ThreeJS object to the scene. For example, they can load it from a GLB file, compose it from one or more ThreeJS primitives, load it from a data store, S3, or a combination of techniques.
+
+Example implementations are defined inside `src/objects`, for loading a UR5e robot model, a Pallet created from a box, and a conveyour from a group of cylinders and boxes grouped togeteher.
+
+Visualize a UR5e robot (GLTF model) and cell components (conveyor, pallet) with live position editing and a clean, extensible architecture.
+
+---
+
+## Setup
+
+1. **Install dependencies**
+
+   ```sh
+   pnpm install
+   # or
+   npm install
+   ```
+
+2. **Run the development server**
+
+   ```sh
+   pnpm dev
+   # or
+   npm run dev
+   ```
+
+   Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+3. **Build for production**
+
+   ```sh
+   pnpm build
+   # or
+   npm run build
+   ```
+
+4. **Preview production build**
+
+   ```sh
+   pnpm preview
+   # or
+   npm run preview
+   ```
+
+---
+
+## Architecture Overview
+
+- **core/renderer.ts**: Sets up Three.js scene, camera, renderer, and lighting.
+- **core/loader.ts**: Loads the UR5e robot model (from `/public/UR5e.gltf`) and adds primitives (conveyor, pallet).
+- **ui/panel.tsx**: Preact sidebar UI for object list, selection, and position editing.
+- **ui/state.tsx**: Preact Signals for reactive app state (scene objects, selection).
+- **main.tsx**: App entry point. Initializes Three.js, loads models, mounts UI, and runs the animation loop.
+- **public/UR5e.gltf**: The robot model (ensure this file is present).
+
+### Extensibility
+
+- Add new robot types or cell components by extending `core/loader.ts` and `core/objects.ts`.
+- Future modules can add kinematics, simulation, or external system integration (e.g., OPC-UA).
+
+---
+
+## License
+
+© Unchained Robotics - All Rights Reserved
+
+--- End of file: README.md ---
+
+index.html
+
+--- Start of file: index.html ---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Robot Cell Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
+  </head>
+  <body style="display: flex; height: 100vh; margin: 0">
+    <div
+      id="ui-panel"
+      style="
+        width: 300px;
+        background: #f4f4f4;
+        border-right: 1px solid #ccc;
+        overflow-y: auto;
+      "
+    ></div>
+    <div id="scene-container" style="flex: 1; position: relative"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+--- End of file: index.html ---
+
+src/ui/panel.tsx
+
+--- Start of file: src/ui/panel.tsx ---
+import { useSignalEffect } from "@preact/signals";
+import { useState } from "preact/hooks";
+import { ObjectList } from "../components/ObjectList";
+import { ObjectProperties } from "../components/ObjectProperties";
+import { SidebarContainer } from "../components/SidebarContainer";
+import { SidebarSettings } from "../components/SidebarSettings";
+import { Signal } from "@preact/signals";
+import { css } from "../../styled-system/css";
+
+interface PanelProps {
+  state: any;
+  sidebarCollapsed: Signal<boolean>;
+  // onReloadScene: () => void;
+}
+
+const DEFAULT_POSITION_FIXED_DIGITS = 2;
+
+export function Panel({ state, sidebarCollapsed }: PanelProps) {
+  const objects = state.objects;
+  const selected = state.selected;
+  const [showConfig, setShowConfig] = useState(false);
+
+  // Update input fields when selection changes
+  useSignalEffect(() => {
+    if (!selected.value) return;
+    const { x, y, z } = selected.value.position;
+    (document.getElementById("pos-x") as HTMLInputElement).value = x.toFixed(
+      DEFAULT_POSITION_FIXED_DIGITS
+    );
+    (document.getElementById("pos-y") as HTMLInputElement).value = y.toFixed(
+      DEFAULT_POSITION_FIXED_DIGITS
+    );
+    (document.getElementById("pos-z") as HTMLInputElement).value = z.toFixed(
+      DEFAULT_POSITION_FIXED_DIGITS
+    );
+    (
+      document.getElementById("selected-object-name") as HTMLDivElement
+    ).textContent = selected.value.name;
+  });
+
+  // Handle position input changes
+  function onPosChange(axis: string, e: Event) {
+    if (!selected.value) return;
+    const v = parseFloat((e.target as HTMLInputElement).value);
+    if (!isNaN(v)) {
+      selected.value.position[axis] = v;
+    }
+  }
+
+  // For toggles, use signals for reactivity
+  const gridVisible = state.gridVisible;
+  const gizmoVisible = state.gizmoVisible;
+
+  return (
+    <SidebarContainer
+      collapsed={sidebarCollapsed.value}
+      setCollapsed={(v) => (sidebarCollapsed.value = v)}
+    >
+      {/* Collapse/expand button */}
+      <button
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          marginBottom: 8,
+          alignSelf: "flex-end",
+        }}
+        title={sidebarCollapsed.value ? "Expand sidebar" : "Collapse sidebar"}
+        onClick={(e) => {
+          e.stopPropagation();
+          sidebarCollapsed.value = !sidebarCollapsed.value;
+        }}
+      >
+        {sidebarCollapsed.value ? (
+          <i className="fa-solid fa-angle-right" style={{ fontSize: 20 }}></i>
+        ) : (
+          <i className="fa-solid fa-angle-left" style={{ fontSize: 20 }}></i>
+        )}
+      </button>
+      {/* Only show content if not collapsed */}
+      {!sidebarCollapsed.value && (
+        <>
+          <ObjectList
+            objects={objects.value}
+            selected={selected.value}
+            onSelect={(obj: any) => (state.selected.value = obj)}
+          />
+          <div
+            style={{
+              borderTop: "1px solid var(--colors-border-DEFAULT, #ccc)",
+              margin: "8px 0",
+            }}
+          />
+          <ObjectProperties
+            selected={selected.value}
+            onPosChange={onPosChange}
+          />
+          {/* Reload Scene Button */}
+          {/*
+          <button
+            onClick={() => {
+              if (
+                confirm(
+                  "Are you sure you want to reload the scene from scene.json? All unsaved changes to object positions will be lost."
+                )
+              ) {
+                // onReloadScene();
+              }
+            }}
+            title="Reload scene from scene.json"
+            class={css({
+              mt: 2,
+              p: 2,
+              width: "100%",
+              bg: "token(colors.blue.500)",
+              color: "white",
+              border: "none",
+              borderRadius: "md",
+              cursor: "pointer",
+              _hover: { bg: "token(colors.blue.600)" },
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 1,
+            })}
+          >
+            <i class="fa-solid fa-arrows-rotate"></i> Reload Scene
+          </button>
+          */}
+        </>
+      )}
+      <SidebarSettings
+        showConfig={showConfig}
+        setShowConfig={setShowConfig}
+        gridVisible={gridVisible.value}
+        setGridVisible={(v: boolean) => (gridVisible.value = v)}
+        gizmoVisible={gizmoVisible.value}
+        setGizmoVisible={(v: boolean) => (gizmoVisible.value = v)}
+        collapsed={sidebarCollapsed.value}
+      />
+    </SidebarContainer>
+  );
+}
+
+--- End of file: src/ui/panel.tsx ---
+
+src/ui/state.tsx
+
+--- Start of file: src/ui/state.tsx ---
+import { signal } from "@preact/signals";
+import type { Object3D } from "three";
+
+export const state = {
+  objects: signal<Object3D[]>([]), // Array of scene objects
+  selected: signal<Object3D | null>(null), // Currently selected object
+  gridVisible: signal(true),
+  gizmoVisible: signal(true),
+};
+
+--- End of file: src/ui/state.tsx ---
+
+src/main.tsx
+
+--- Start of file: src/main.tsx ---
+import "../styled-system/styles.css";
+import {
+  setupRenderer,
+  getScene,
+  getCamera,
+  getRenderer,
+  getControls,
+  SIDEBAR_WIDTH,
+  getComposer,
+  updateOutlinePassSelection,
+  updateRendererSize as updateCoreRendererSize,
+} from "./core/renderer";
+// import { getAllSceneObjects } from "./core/loader"; // No longer used for primary loading
+import "./core/objectRegistry"; // IMPORTANT: Ensures factories are registered on startup
+import { loadSceneFromFile } from "./core/sceneManager";
+// import { getRobotMixer } from "./objects/UR5eRobot"; // No longer exists / needed globally
+import { render } from "preact";
+import { Panel } from "./ui/panel";
+import { state } from "./ui/state";
+import * as THREE from "three";
+import { ViewportGizmo } from "three-viewport-gizmo";
+import { signal, useSignalEffect } from "@preact/signals";
+import type { SceneInstance } from "./types";
+
+const DEFAULT_CAMERA_POSITION: [number, number, number] = [2, 2, 4];
+const DEFAULT_CAMERA_LOOKAT: [number, number, number] = [0, 0.5, 0];
+const COLLAPSED_SIDEBAR_WIDTH = 40;
+const GIZMO_SIZE = 80;
+const GIZMO_OFFSET_TOP = 16;
+const GIZMO_OFFSET_LEFT = 16;
+const GRID_HELPER_SIZE = 10;
+const GRID_HELPER_DIVISIONS = 20;
+const GRID_HELPER_COLOR_CENTER_LINE = 0xcccccc;
+const GRID_HELPER_COLOR_GRID = 0xd0d0d0;
+const AXES_HELPER_SIZE = 0.5;
+const AXES_HELPER_Y_OFFSET = 0.001;
+
+// Sidebar collapsed state (shared between main and Panel)
+export const sidebarCollapsed = signal(false);
+// export const reloadSceneTrigger = signal(0); // Signal to trigger scene reload
+
+// Setup ThreeJS renderer, scene, camera
+setupRenderer();
+
+// Function to dispose of an Object3D and its descendants
+function disposeObject(object: THREE.Object3D) {
+  if (!object) return;
+
+  // Dispose geometries and materials
+  if ((object as any).geometry) {
+    (object as any).geometry.dispose();
+  }
+  if ((object as any).material) {
+    if (Array.isArray((object as any).material)) {
+      (object as any).material.forEach((material: THREE.Material) =>
+        material.dispose()
+      );
+    } else {
+      (object as any).material.dispose();
+    }
+  }
+
+  // Recursively dispose children
+  if (object.children) {
+    object.children.slice().forEach((child) => disposeObject(child)); // Use slice to avoid modifying array while iterating
+  }
+
+  // If the object has a mixer (e.g., robot), stop all actions
+  if (
+    object.userData.mixer &&
+    typeof object.userData.mixer.stopAllAction === "function"
+  ) {
+    object.userData.mixer.stopAllAction();
+  }
+  // We don't explicitly dispose the mixer itself, Three.js might handle it or it might not be necessary
+  // if the object holding it is removed from scene and JS garbage collection takes over.
+}
+
+const isHelperObject = (object: THREE.Object3D, camera: THREE.Camera) => {
+  return (
+    object instanceof THREE.GridHelper ||
+    object instanceof THREE.AxesHelper ||
+    object instanceof THREE.AmbientLight ||
+    object instanceof THREE.DirectionalLight ||
+    object === camera
+  );
+};
+
+async function loadAndPopulateScene() {
+  const scene = getScene();
+  const camera = getCamera();
+  const controls = getControls();
+
+  // 1. Clear existing objects from the scene and state
+  const objectsToRemove = [...state.objects.value]; // Create a copy for iteration
+
+  if (objectsToRemove.length > 0) {
+    console.log(
+      `[SCENE RELOAD] Clearing ${objectsToRemove.length} old objects.`
+    );
+    objectsToRemove.forEach((obj) => {
+      console.log(
+        `[SCENE RELOAD] Attempting to remove and dispose: ${obj.name} (UUID: ${obj.uuid})`
+      );
+      disposeObject(obj);
+      scene.remove(obj);
+    });
+
+    // Verify actual scene children after removal
+    const remainingSceneObjects = scene.children.filter(
+      (c) => !isHelperObject(c, camera)
+    );
+    console.log(
+      `[SCENE RELOAD] After clearing, ${remainingSceneObjects.length} non-helper objects remain in scene:`,
+      remainingSceneObjects.map((o) => ({
+        name: o.name,
+        uuid: o.uuid,
+        type: o.type,
+      }))
+    );
+  }
+
+  state.objects.value = []; // Clear the signal's array
+  state.selected.value = null;
+  updateOutlinePassSelection([]); // Clear outline pass selection
+
+  // 2. Load new scene definition
+  console.log("[SCENE RELOAD] Fetching new scene definition...");
+  const { sceneInstances, defaultSelectedInstance, sceneSettings } =
+    await loadSceneFromFile("/scene.json");
+
+  // 3. Apply scene settings (e.g., camera)
+  if (sceneSettings?.cameraPosition) {
+    camera.position.set(...sceneSettings.cameraPosition);
+  } else {
+    camera.position.set(...DEFAULT_CAMERA_POSITION);
+  }
+  if (sceneSettings?.cameraLookAt) {
+    camera.lookAt(...sceneSettings.cameraLookAt);
+    controls.target.set(...sceneSettings.cameraLookAt);
+  } else {
+    camera.lookAt(...DEFAULT_CAMERA_LOOKAT);
+    controls.target.set(...DEFAULT_CAMERA_LOOKAT);
+  }
+  controls.update();
+
+  // 4. Populate scene with new objects
+  const threeObjects: THREE.Object3D[] = [];
+  console.log(
+    `[SCENE RELOAD] Processing ${sceneInstances.length} instances from new definition.`
+  );
+  for (const instance of sceneInstances) {
+    if (instance.object3D) {
+      console.log(
+        `[SCENE RELOAD] Adding new object to scene: ${instance.object3D.name} (UUID: ${instance.object3D.uuid})`
+      );
+      scene.add(instance.object3D);
+      threeObjects.push(instance.object3D);
+    } else {
+      console.warn(
+        `[SCENE RELOAD] Scene instance ${instance.id} (type: ${instance.type}) did not produce an object3D.`
+      );
+    }
+  }
+  state.objects.value = [...threeObjects];
+
+  // 5. Set selected object
+  if (defaultSelectedInstance && defaultSelectedInstance.object3D) {
+    state.selected.value = defaultSelectedInstance.object3D;
+  } else if (threeObjects.length > 0) {
+    state.selected.value = threeObjects[0];
+  }
+  console.log(
+    `[SCENE RELOAD] Scene reloaded. Objects in state: ${
+      state.objects.value.length
+    }. Selected: ${state.selected.value?.name ?? "None"}`
+  );
+  const finalSceneObjects = scene.children.filter(
+    (c) => !isHelperObject(c, camera)
+  );
+  console.log(
+    `[SCENE RELOAD] Final non-helper object count in scene: ${finalSceneObjects.length}`,
+    finalSceneObjects.map((o) => ({ name: o.name, uuid: o.uuid, type: o.type }))
+  );
+}
+
+// Update outline pass when selection changes
+state.selected.subscribe((currentSelection) => {
+  if (currentSelection) {
+    updateOutlinePassSelection([currentSelection]);
+  } else {
+    updateOutlinePassSelection([]);
+  }
+});
+
+// Initial load and subscribe to reload trigger
+loadAndPopulateScene();
+// reloadSceneTrigger.subscribe(() => {
+// console.log("Reload scene triggered...");
+// loadAndPopulateScene();
+// });
+
+// Mount Preact sidebar UI
+const uiPanel = document.getElementById("ui-panel");
+render(
+  <Panel
+    state={state}
+    sidebarCollapsed={sidebarCollapsed}
+    // onReloadScene={() => (reloadSceneTrigger.value += 1)}
+  />,
+  uiPanel!
+);
+
+// Animation loop
+const clock = new THREE.Clock();
+
+// Viewport Gizmo setup
+let gizmo: any = null;
+function mountGizmo() {
+  if (gizmo) {
+    // Remove the gizmo from DOM if it exists
+    gizmo.dispose();
+    gizmo = null;
+  }
+  if (state.gizmoVisible.value) {
+    const camera = getCamera();
+    const renderer = getRenderer();
+    const sceneContainer = document.getElementById("scene-container");
+    if (sceneContainer) {
+      gizmo = new ViewportGizmo(camera, renderer, {
+        size: GIZMO_SIZE,
+        container: sceneContainer,
+        placement: "top-right",
+        offset: { top: GIZMO_OFFSET_TOP, left: GIZMO_OFFSET_LEFT },
+      });
+      gizmo.attachControls(getControls());
+    }
+  }
+}
+
+state.gizmoVisible.subscribe(mountGizmo);
+window.addEventListener("resize", () => {
+  if (gizmo) gizmo.update();
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  getControls().update();
+  const delta = clock.getDelta();
+
+  // Update animations for objects that have a mixer
+  if (state.objects.value && state.objects.value.length > 0) {
+    state.objects.value.forEach((obj) => {
+      if (
+        obj.userData.mixer &&
+        typeof obj.userData.mixer.update === "function"
+      ) {
+        obj.userData.mixer.update(delta);
+      }
+    });
+  }
+
+  const composer = getComposer();
+  composer.render(delta);
+  if (gizmo && state.gizmoVisible.value) {
+    gizmo.render();
+  }
+}
+animate();
+
+// Remove axesHelper from gizmo toggle, only show with grid
+let gridHelper: THREE.GridHelper | null = null;
+let axesHelper: THREE.AxesHelper | null = null;
+
+function updateHelpers() {
+  const scene = getScene();
+  // Grid and axes at origin
+  if (state.gridVisible.value) {
+    if (!gridHelper) {
+      gridHelper = new THREE.GridHelper(
+        GRID_HELPER_SIZE,
+        GRID_HELPER_DIVISIONS,
+        GRID_HELPER_COLOR_CENTER_LINE,
+        GRID_HELPER_COLOR_GRID
+      );
+      gridHelper.position.y = 0; // Ensure it's on the ground plane
+      scene.add(gridHelper);
+    }
+    if (!axesHelper) {
+      axesHelper = new THREE.AxesHelper(AXES_HELPER_SIZE);
+      axesHelper.position.set(0, AXES_HELPER_Y_OFFSET, 0); // Lift slightly to avoid z-fighting with grid
+      scene.add(axesHelper);
+    }
+  } else {
+    if (gridHelper) {
+      scene.remove(gridHelper);
+      gridHelper.dispose(); // Dispose geometry/material
+      gridHelper = null;
+    }
+    if (axesHelper) {
+      scene.remove(axesHelper);
+      axesHelper.dispose(); // Dispose geometry/material
+      axesHelper = null;
+    }
+  }
+}
+
+state.gridVisible.subscribe(updateHelpers);
+// Initial helpers
+updateHelpers();
+// Mount gizmo initially
+mountGizmo();
+
+// --- Responsive sidebar logic ---
+function updateSceneSize() {
+  const collapsed = sidebarCollapsed.value;
+  // Adjust width: 40px for collapsed (width of SidebarContainer when collapsed)
+  // SIDEBAR_WIDTH (300px) for expanded
+  const currentSidebarWidth = collapsed
+    ? COLLAPSED_SIDEBAR_WIDTH
+    : SIDEBAR_WIDTH;
+  const width = window.innerWidth - currentSidebarWidth;
+  const height = window.innerHeight;
+  const camera = getCamera();
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  getRenderer().setSize(width, height);
+  if (gizmo) gizmo.update(); // Gizmo might need update on resize too
+
+  // Call the imported function from renderer.tsx to update core components
+  updateCoreRendererSize(width, height);
+}
+
+sidebarCollapsed.subscribe(updateSceneSize);
+window.addEventListener("resize", updateSceneSize);
+// Initial size
+updateSceneSize();
+
+--- End of file: src/main.tsx ---
+
+src/core/objectRegistry.ts
+
+--- Start of file: src/core/objectRegistry.ts ---
+import type { SceneObjectFactory } from "../types";
+
+// Import factories explicitly.
+// This ensures they are part of the bundle and avoids issues with dynamic imports in some environments.
+import PalletFactory from "../objects/Pallet";
+import ConveyorFactory from "../objects/Conveyor";
+import UR5eRobotFactory from "../objects/UR5eRobot";
+// Import other object factories here as they are created:
+// import AnotherObjectFactory from "../objects/AnotherObject";
+
+const objectFactories = new Map<string, SceneObjectFactory>();
+
+export function registerObjectFactory(type: string, factory: SceneObjectFactory) {
+  if (objectFactories.has(type)) {
+    // console.warn(`Object factory type "${type}" is already registered. Overwriting.`);
+  }
+  objectFactories.set(type, factory);
+}
+
+export function getObjectFactory(type: string): SceneObjectFactory | undefined {
+  return objectFactories.get(type);
+}
+
+// --- Register all known object factories ---
+registerObjectFactory("Pallet", PalletFactory);
+registerObjectFactory("Conveyor", ConveyorFactory);
+registerObjectFactory("UR5eRobot", UR5eRobotFactory);
+// registerObjectFactory("AnotherObject", AnotherObjectFactory);
+
+
+// This file, by being imported (e.g., in main.tsx or sceneManager.ts),
+// ensures that the factories are registered when the application starts. 
+
+--- End of file: src/core/objectRegistry.ts ---
+
+src/core/renderer.tsx
+
+--- Start of file: src/core/renderer.tsx ---
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { FXAAShader } from "three/examples/jsm/shaders/FXAAShader.js";
+
+export const SIDEBAR_WIDTH = 300;
+
+const SCENE_BACKGROUND_COLOR = 0x707088;
+const CAMERA_FOV = 45;
+const CAMERA_NEAR_PLANE = 0.1;
+const CAMERA_FAR_PLANE = 1000;
+const CAMERA_INITIAL_POSITION: [number, number, number] = [2, 2, 4];
+const CAMERA_INITIAL_LOOKAT: [number, number, number] = [0, 0.5, 0];
+
+const AMBIENT_LIGHT_COLOR = 0xffffff;
+const AMBIENT_LIGHT_INTENSITY = 0.8;
+const DIRECTIONAL_LIGHT_COLOR = 0xffffff;
+const DIRECTIONAL_LIGHT_INTENSITY = 0.9;
+const DIRECTIONAL_LIGHT_POSITION: [number, number, number] = [5, 10, 7];
+
+const OUTLINE_PASS_EDGE_STRENGTH = 2.0;
+const OUTLINE_PASS_EDGE_GLOW = 0.7;
+const OUTLINE_PASS_EDGE_THICKNESS = 1.5;
+const OUTLINE_PASS_PULSE_PERIOD = 0;
+const OUTLINE_PASS_VISIBLE_EDGE_COLOR = "#FFFF00";
+const OUTLINE_PASS_HIDDEN_EDGE_COLOR = "#FFFF00";
+
+let scene: THREE.Scene,
+  camera: THREE.PerspectiveCamera,
+  renderer: THREE.WebGLRenderer,
+  controls: OrbitControls,
+  composer: EffectComposer,
+  outlinePass: OutlinePass,
+  effectFXAA: ShaderPass;
+
+export function setupRenderer() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(SCENE_BACKGROUND_COLOR);
+
+  const initialWidth = window.innerWidth - SIDEBAR_WIDTH;
+  const initialHeight = window.innerHeight;
+  camera = new THREE.PerspectiveCamera(
+    CAMERA_FOV,
+    initialWidth / initialHeight,
+    CAMERA_NEAR_PLANE,
+    CAMERA_FAR_PLANE
+  );
+  camera.position.set(...CAMERA_INITIAL_POSITION);
+  camera.lookAt(...CAMERA_INITIAL_LOOKAT);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(initialWidth, initialHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  document.getElementById("scene-container")!.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(...CAMERA_INITIAL_LOOKAT);
+  controls.update();
+
+  const ambient = new THREE.AmbientLight(
+    AMBIENT_LIGHT_COLOR,
+    AMBIENT_LIGHT_INTENSITY
+  );
+  scene.add(ambient);
+  const dir = new THREE.DirectionalLight(
+    DIRECTIONAL_LIGHT_COLOR,
+    DIRECTIONAL_LIGHT_INTENSITY
+  );
+  dir.position.set(...DIRECTIONAL_LIGHT_POSITION);
+  scene.add(dir);
+
+  composer = new EffectComposer(renderer);
+  composer.setSize(initialWidth, initialHeight);
+
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
+
+  outlinePass = new OutlinePass(
+    new THREE.Vector2(initialWidth, initialHeight),
+    scene,
+    camera
+  );
+  outlinePass.edgeStrength = OUTLINE_PASS_EDGE_STRENGTH;
+  outlinePass.edgeGlow = OUTLINE_PASS_EDGE_GLOW;
+  outlinePass.edgeThickness = OUTLINE_PASS_EDGE_THICKNESS;
+  outlinePass.pulsePeriod = OUTLINE_PASS_PULSE_PERIOD;
+  outlinePass.visibleEdgeColor.set(OUTLINE_PASS_VISIBLE_EDGE_COLOR);
+  outlinePass.hiddenEdgeColor.set(OUTLINE_PASS_HIDDEN_EDGE_COLOR);
+  composer.addPass(outlinePass);
+
+  effectFXAA = new ShaderPass(FXAAShader);
+  effectFXAA.uniforms["resolution"].value.set(
+    1 / initialWidth,
+    1 / initialHeight
+  );
+  composer.addPass(effectFXAA);
+}
+
+export function updateRendererSize(width: number, height: number) {
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height);
+  composer.setSize(width, height);
+  effectFXAA.uniforms["resolution"].value.set(1 / width, 1 / height);
+}
+
+export function getScene(): THREE.Scene {
+  return scene;
+}
+export function getCamera(): THREE.PerspectiveCamera {
+  return camera;
+}
+export function getRenderer(): THREE.WebGLRenderer {
+  return renderer;
+}
+export function getComposer(): EffectComposer {
+  return composer;
+}
+export function getControls(): OrbitControls {
+  return controls;
+}
+
+export function updateOutlinePassSelection(selectedObjects: THREE.Object3D[]) {
+  if (outlinePass) {
+    outlinePass.selectedObjects = selectedObjects;
+  }
+}
+
+--- End of file: src/core/renderer.tsx ---
+
+src/core/loader.tsx
+
+--- Start of file: src/core/loader.tsx ---
+// This file's original purpose of dynamically loading all objects for the scene
+// has been superseded by the new scene.json and objectRegistry.ts system.
+// It can be kept if dynamic discovery of object factories is needed for other tools,
+// or removed if no longer used.
+
+import type { SceneObjectFactory } from "../types";
+
+// Dynamically import all modules in src/objects/
+// This glob import might be useful for development tools or a plugin system,
+// but it's not used by the core scene loading mechanism anymore.
+const modules = import.meta.glob<{ default: SceneObjectFactory }>(
+  "../objects/*.ts",
+  {
+    eager: true, // `eager: true` means they are imported synchronously at module load time
+  }
+);
+
+/**
+ * Retrieves all default exports from .ts files in src/objects/
+ * assuming they are SceneObjectFactory implementations.
+ * This is not used by the main scene loading logic anymore.
+ * @returns An array of SceneObjectFactory.
+ */
+export function getAllSceneObjectFactories(): SceneObjectFactory[] {
+  return Object.values(modules)
+    .map((mod) => mod.default)
+    .filter((factory) => factory && typeof factory.create === "function"); // Basic validation
+}
+
+// console.log("Available object factories found by loader.ts:", getAllSceneObjectFactories().map(f => f.constructor.name));
+// This can be useful for debugging or listing available types if this file is still used.
+
+--- End of file: src/core/loader.tsx ---
+
+src/core/sceneManager.ts
+
+--- Start of file: src/core/sceneManager.ts ---
+import { getObjectFactory } from "./objectRegistry";
+import type { SceneInstanceConfig, SceneInstance, ObjectParameters } from "../types";
+
+interface SceneDefinition {
+  settings?: {
+    defaultSelectedId?: string;
+    cameraPosition?: [number, number, number];
+    cameraLookAt?: [number, number, number];
+  };
+  objects: SceneInstanceConfig[];
+}
+
+export async function loadSceneFromFile(filePath: string): Promise<{
+  sceneInstances: SceneInstance[],
+  defaultSelectedInstance?: SceneInstance,
+  sceneSettings?: SceneDefinition['settings'];
+}> {
+  try {
+    const response = await fetch(filePath);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch scene file: ${response.statusText} (path: ${filePath})`);
+    }
+    const sceneDefinition = (await response.json()) as SceneDefinition;
+    const { sceneInstances, defaultSelectedInstance } = await processSceneDefinition(sceneDefinition);
+    return { sceneInstances, defaultSelectedInstance, sceneSettings: sceneDefinition.settings };
+  } catch (error) {
+    console.error("Error loading scene definition from file:", error);
+    return { sceneInstances: [], defaultSelectedInstance: undefined, sceneSettings: undefined };
+  }
+}
+
+export async function processSceneDefinition(sceneDefinition: SceneDefinition): Promise<{
+  sceneInstances: SceneInstance[],
+  defaultSelectedInstance?: SceneInstance;
+}> {
+  const sceneInstances: SceneInstance[] = [];
+  let defaultSelectedInstance: SceneInstance | undefined = undefined;
+
+  for (const instanceConfig of sceneDefinition.objects) {
+    const factory = getObjectFactory(instanceConfig.type);
+    if (!factory) {
+      console.warn(`No factory found for object type: ${instanceConfig.type} (id: ${instanceConfig.id})`);
+      continue;
+    }
+
+    try {
+      // Parameters for the factory: combine scene-defined params with the instance name.
+      // The instance name (instanceConfig.name or instanceConfig.id) is crucial for the Object3D's name property.
+      const factoryParams: ObjectParameters = {
+        ...(instanceConfig.parameters || {}), // Spread specific params like modelPath, length, width etc.
+        name: instanceConfig.name || instanceConfig.id, // Pass the desired instance name to the factory
+        // Pass position, rotation, scale from instanceConfig.parameters if they exist
+        position: instanceConfig.parameters?.position,
+        rotation: instanceConfig.parameters?.rotation,
+        scale: instanceConfig.parameters?.scale,
+      };
+
+      const object3D = await factory.create(factoryParams);
+
+      // The factory's `applyObjectParameters` should have used `factoryParams.name`.
+      // As a safeguard, or if factories don't robustly set name from params:
+      object3D.name = instanceConfig.name || instanceConfig.id;
+
+      // The factory should also apply position/rotation/scale based on factoryParams.
+      // If the factory sets defaults and then applies params, scene definition will override.
+
+      const sceneInstance: SceneInstance = {
+        id: instanceConfig.id,
+        type: instanceConfig.type,
+        name: object3D.name, // Use the name now on the Object3D
+        parameters: instanceConfig.parameters, // Store original parameters
+        object3D: object3D,
+      };
+      sceneInstances.push(sceneInstance);
+
+      if (sceneDefinition.settings?.defaultSelectedId === instanceConfig.id) {
+        defaultSelectedInstance = sceneInstance;
+      }
+
+    } catch (error) {
+      console.error(
+        `Error creating object instance "${instanceConfig.id}" of type "${instanceConfig.type}":`,
+        error
+      );
+    }
+  }
+  return { sceneInstances, defaultSelectedInstance };
+} 
+
+--- End of file: src/core/sceneManager.ts ---
+
+src/objects/UR5eRobot.ts
+
+--- Start of file: src/objects/UR5eRobot.ts ---
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import * as THREE from "three";
+import type { Object3D, AnimationMixer } from "three";
+import type { SceneObjectFactory, ObjectParameters } from "../types";
+import { applyObjectParameters } from "../utils/objectUtils";
+
+const DEFAULT_ROBOT_POSITION: [number, number, number] = [0, 0, 0];
+const DEFAULT_ROBOT_MODEL_PATH = "/UR5e.gltf";
+const FALLBACK_ROBOT_NAME = "UR5e Robot";
+
+const UR5eRobotFactory: SceneObjectFactory = {
+  async create(params?: ObjectParameters): Promise<Object3D> {
+    const modelPath = params?.modelPath as string || DEFAULT_ROBOT_MODEL_PATH;
+
+    return new Promise((resolve, reject) => {
+      const loader = new GLTFLoader();
+      loader.load(
+        modelPath,
+        (gltf) => {
+          const robot = gltf.scene;
+
+          robot.position.set(...DEFAULT_ROBOT_POSITION);
+
+          applyObjectParameters(robot, params);
+
+          if (!robot.name) {
+            robot.name = FALLBACK_ROBOT_NAME;
+          }
+
+          if (gltf.animations && gltf.animations.length > 0) {
+            const mixer = new THREE.AnimationMixer(robot);
+            gltf.animations.forEach((clip) => mixer.clipAction(clip).play());
+            robot.userData.mixer = mixer;
+          }
+          resolve(robot);
+        },
+        undefined,
+        (error) => {
+          console.error(`Error loading GLTF model from ${modelPath}:`, error);
+          reject(error);
+        }
+      );
+    });
+  },
+};
+
+export default UR5eRobotFactory; 
+
+--- End of file: src/objects/UR5eRobot.ts ---
+
+src/objects/Pallet.ts
+
+--- Start of file: src/objects/Pallet.ts ---
+import * as THREE from "three";
+import type { SceneObjectFactory, ObjectParameters } from "../types";
+import { applyObjectParameters } from "../utils/objectUtils";
+
+const DEFAULT_PALLET_WIDTH = 0.4;
+const DEFAULT_PALLET_HEIGHT = 0.1;
+const DEFAULT_PALLET_DEPTH = 0.4;
+const DEFAULT_PALLET_COLOR = 0x996633;
+const DEFAULT_PALLET_POSITION: [number, number, number] = [-0.8, 0.05, 0];
+const FALLBACK_PALLET_NAME = "Pallet";
+
+const PalletFactory: SceneObjectFactory = {
+  create(params?: ObjectParameters) {
+    const geometry = new THREE.BoxGeometry(
+      params?.width ?? DEFAULT_PALLET_WIDTH,
+      params?.height ?? DEFAULT_PALLET_HEIGHT,
+      params?.depth ?? DEFAULT_PALLET_DEPTH
+    );
+    const material = new THREE.MeshStandardMaterial({
+      color: params?.color ?? DEFAULT_PALLET_COLOR,
+    });
+    const pallet = new THREE.Mesh(geometry, material);
+
+    pallet.position.set(...DEFAULT_PALLET_POSITION);
+
+    applyObjectParameters(pallet, params);
+
+    if (!pallet.name) {
+      pallet.name = FALLBACK_PALLET_NAME;
+    }
+
+    return pallet;
+  },
+};
+
+export default PalletFactory; 
+
+--- End of file: src/objects/Pallet.ts ---
+
+src/objects/Conveyor.ts
+
+--- Start of file: src/objects/Conveyor.ts ---
+import * as THREE from "three";
+import type { SceneObjectFactory, ObjectParameters } from "../types";
+import { applyObjectParameters } from "../utils/objectUtils";
+
+const DEFAULT_CONVEYOR_LENGTH = 1.2;
+const DEFAULT_CONVEYOR_WIDTH = 0.4;
+const DEFAULT_ROLLER_RADIUS = 0.02;
+const DEFAULT_ROLLER_SIDE_MARGIN = 0.04;
+const DEFAULT_ROLLER_SPACING = 0.06;
+const DEFAULT_ROLLER_COLOR = 0xcccccc;
+const DEFAULT_ROLLER_SEGMENTS = 16;
+const DEFAULT_ROLLER_POSITION_Y = 0.04;
+
+const DEFAULT_SHOW_GUARD_RAILS = true;
+const DEFAULT_RAIL_HEIGHT = 0.04;
+const DEFAULT_RAIL_THICKNESS = 0.03;
+const DEFAULT_RAIL_COLOR = 0x888888;
+const DEFAULT_RAIL_POSITION_Y = 0.09;
+
+const DEFAULT_SHOW_BASE = true;
+const DEFAULT_BASE_HEIGHT = 0.04;
+const DEFAULT_BASE_COLOR = 0x555555;
+const DEFAULT_BASE_POSITION_Y = 0.0;
+
+const DEFAULT_CONVEYOR_GROUP_POSITION: [number, number, number] = [1.1, 0.075, 0];
+const FALLBACK_CONVEYOR_NAME = "Conveyor Belt";
+
+const ConveyorFactory: SceneObjectFactory = {
+  create(params?: ObjectParameters) {
+    const conveyorGroup = new THREE.Group();
+
+    const length = params?.length ?? DEFAULT_CONVEYOR_LENGTH;
+    const width = params?.width ?? DEFAULT_CONVEYOR_WIDTH;
+    const rollerRadius = params?.rollerRadius ?? DEFAULT_ROLLER_RADIUS;
+    const rollerLength = width - (params?.rollerSideMargin ?? DEFAULT_ROLLER_SIDE_MARGIN);
+
+    const rollerSpacing = params?.rollerSpacing ?? DEFAULT_ROLLER_SPACING;
+
+    let numRollers: number;
+    if (length <= rollerRadius * 2) {
+      numRollers = 1;
+    } else if (length <= rollerSpacing) {
+      numRollers = 1;
+    } else {
+      numRollers = Math.floor(length / rollerSpacing) + 1;
+    }
+    const actualRollerDistributionLength = length - (rollerRadius * 2);
+    const calculatedSpacing = numRollers > 1 ? actualRollerDistributionLength / (numRollers - 1) : 0;
+
+    const rollerMaterial = new THREE.MeshStandardMaterial({ color: params?.rollerColor ?? DEFAULT_ROLLER_COLOR });
+    for (let i = 0; i < numRollers; i++) {
+      const rollerGeometry = new THREE.CylinderGeometry(
+        rollerRadius,
+        rollerRadius,
+        rollerLength,
+        DEFAULT_ROLLER_SEGMENTS
+      );
+      const roller = new THREE.Mesh(rollerGeometry, rollerMaterial);
+      roller.rotation.x = Math.PI / 2;
+      if (numRollers === 1) {
+        roller.position.x = 0;
+      } else {
+        roller.position.x = (-length / 2) + rollerRadius + (i * calculatedSpacing);
+      }
+      roller.position.y = params?.rollerPositionY ?? DEFAULT_ROLLER_POSITION_Y;
+      conveyorGroup.add(roller);
+    }
+
+    if (params?.showGuardRails !== false) {
+      const railHeight = params?.railHeight ?? DEFAULT_RAIL_HEIGHT;
+      const railThickness = params?.railThickness ?? DEFAULT_RAIL_THICKNESS;
+      const railMaterial = new THREE.MeshStandardMaterial({ color: params?.railColor ?? DEFAULT_RAIL_COLOR });
+      const railGeometry = new THREE.BoxGeometry(length, railHeight, railThickness);
+
+      const leftRail = new THREE.Mesh(railGeometry, railMaterial);
+      leftRail.position.set(0, (params?.railPositionY ?? DEFAULT_RAIL_POSITION_Y), width / 2 - railThickness / 2);
+      conveyorGroup.add(leftRail);
+
+      const rightRail = new THREE.Mesh(railGeometry, railMaterial);
+      rightRail.position.set(0, (params?.railPositionY ?? DEFAULT_RAIL_POSITION_Y), -(width / 2 - railThickness / 2));
+      conveyorGroup.add(rightRail);
+    }
+
+    if (params?.showBase !== false) {
+      const baseHeight = params?.baseHeight ?? DEFAULT_BASE_HEIGHT;
+      const baseMaterial = new THREE.MeshStandardMaterial({ color: params?.baseColor ?? DEFAULT_BASE_COLOR });
+      const baseGeometry = new THREE.BoxGeometry(length, baseHeight, width);
+      const base = new THREE.Mesh(baseGeometry, baseMaterial);
+      base.position.set(0, params?.basePositionY ?? DEFAULT_BASE_POSITION_Y, 0);
+      conveyorGroup.add(base);
+    }
+
+    conveyorGroup.position.set(...DEFAULT_CONVEYOR_GROUP_POSITION);
+
+    applyObjectParameters(conveyorGroup, params);
+    if (!conveyorGroup.name) {
+      conveyorGroup.name = FALLBACK_CONVEYOR_NAME;
+    }
+
+    return conveyorGroup;
+  },
+};
+
+export default ConveyorFactory; 
+
+--- End of file: src/objects/Conveyor.ts ---
+
+src/utils/objectUtils.ts
+
+--- Start of file: src/utils/objectUtils.ts ---
+import * as THREE from "three";
+import type { ObjectParameters } from "../types";
+
+export function applyObjectParameters(
+  object: THREE.Object3D,
+  params?: ObjectParameters
+) {
+  if (!params) return;
+
+  if (typeof params.name === 'string') {
+    object.name = params.name;
+  }
+
+  if (params.position) {
+    if (Array.isArray(params.position)) {
+      object.position.set(
+        params.position[0] ?? object.position.x,
+        params.position[1] ?? object.position.y,
+        params.position[2] ?? object.position.z
+      );
+    } else {
+      object.position.copy(params.position as THREE.Vector3);
+    }
+  }
+
+  if (params.rotation) {
+    if (Array.isArray(params.rotation)) {
+      object.rotation.set(
+        params.rotation[0] ?? object.rotation.x,
+        params.rotation[1] ?? object.rotation.y,
+        params.rotation[2] ?? object.rotation.z
+      );
+    } else {
+      object.rotation.copy(params.rotation as THREE.Euler);
+    }
+  }
+
+  if (params.scale) {
+    if (Array.isArray(params.scale)) {
+      object.scale.set(
+        params.scale[0] ?? object.scale.x,
+        params.scale[1] ?? object.scale.y,
+        params.scale[2] ?? object.scale.z
+      );
+    } else {
+      object.scale.copy(params.scale as THREE.Vector3);
+    }
+  }
+} 
+
+--- End of file: src/utils/objectUtils.ts ---
+
+src/style/index.css
+
+--- Start of file: src/style/index.css ---
+@layer reset, base, tokens, recipes, utilities;
+/* PandaCSS base styles loaded for 3D editor UI */
+
+--- End of file: src/style/index.css ---
+
+src/types.ts
+
+--- Start of file: src/types.ts ---
+import { Object3D, Vector3, Euler } from "three";
+
+export interface ObjectParameters {
+  position?: number[] | Vector3; // Array [x, y, z] for JSON
+  rotation?: number[] | Euler; // Array [x, y, z] (Euler angles in radians) for JSON
+  scale?: number[] | Vector3;    // Array [x, y, z] for JSON
+  name?: string; // User-defined name for this specific instance, passed to factory
+  [key: string]: any; // For object-specific parameters like modelPath, length, width etc.
+}
+
+export interface SceneObjectFactory {
+  create(params?: ObjectParameters): Object3D | Promise<Object3D>;
+}
+
+export interface SceneInstanceConfig {
+  id: string;         // Unique ID for this instance in the scene
+  type: string;       // Type of object (e.g., "Pallet", "UR5eRobot"). Maps to a SceneObjectFactory.
+  name?: string;      // Display name for UI. Falls back to id if not provided.
+  parameters?: Omit<ObjectParameters, 'name'>; // Original parameters from JSON, 'name' comes from SceneInstanceConfig.name
+}
+
+// Runtime representation of an object instance in the scene
+export interface SceneInstance extends SceneInstanceConfig {
+  object3D: Object3D; // The actual Three.js object
+}
+
+--- End of file: src/types.ts ---
+
+src/components/ObjectList.tsx
+
+--- Start of file: src/components/ObjectList.tsx ---
+import { css } from "../../styled-system/css";
+
+interface ObjectListProps {
+  objects: any[];
+  selected: any;
+  onSelect: (obj: any) => void;
+}
+
+export function ObjectList({ objects, selected, onSelect }: ObjectListProps) {
+  return (
+    <div
+      id="object-list-container"
+      class={css({
+        mb: 2,
+        p: 2,
+        bg: "token(colors.bg.card)",
+        borderRadius: "md",
+        boxShadow: "card",
+      })}
+    >
+      <h3
+        class={css({
+          fontWeight: "bold",
+          fontSize: "md",
+          mb: 2,
+          color: "token(colors.text.accent)",
+          letterSpacing: "wide",
+        })}
+      >
+        Scene Objects
+      </h3>
+      <ul id="object-list" class={css({ listStyle: "none", p: 0, m: 0 })}>
+        {objects.map((obj) => (
+          <li
+            class={css({
+              cursor: "pointer",
+              p: 1,
+              borderRadius: "sm",
+              bg: selected === obj ? "token(colors.bg.accent)" : undefined,
+              fontWeight: selected === obj ? "bold" : undefined,
+              mb: 1,
+              fontSize: "sm",
+              _hover: { bg: "#f0f0ff" },
+              transition: "background 0.2s",
+            })}
+            onClick={() => onSelect(obj)}
+          >
+            {obj.name}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+--- End of file: src/components/ObjectList.tsx ---
+
+src/components/ToggleControl.tsx
+
+--- Start of file: src/components/ToggleControl.tsx ---
+import { css } from "../../styled-system/css";
+
+interface ToggleControlProps {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  id?: string;
+}
+
+export function ToggleControl({
+  label,
+  checked,
+  onChange,
+  id,
+}: ToggleControlProps) {
+  return (
+    <label
+      htmlFor={id}
+      class={css({
+        display: "flex",
+        alignItems: "center",
+        mb: 1,
+        fontWeight: "medium",
+        fontSize: "sm",
+        color: "token(colors.text.secondary)",
+        cursor: "pointer",
+      })}
+    >
+      <input
+        type="checkbox"
+        id={id}
+        checked={checked}
+        onInput={(e: any) => onChange(e.target.checked)}
+        class={css({ mr: 1 })}
+      />
+      {label}
+    </label>
+  );
+}
+
+--- End of file: src/components/ToggleControl.tsx ---
+
+src/components/SidebarSettings.tsx
+
+--- Start of file: src/components/SidebarSettings.tsx ---
+import { css } from "../../styled-system/css";
+import { PanelConfig } from "./PanelConfig";
+
+interface SidebarSettingsProps {
+  showConfig: boolean;
+  setShowConfig: (v: boolean) => void;
+  gridVisible: boolean;
+  setGridVisible: (v: boolean) => void;
+  gizmoVisible: boolean;
+  setGizmoVisible: (v: boolean) => void;
+  collapsed: boolean;
+}
+
+export function SidebarSettings({
+  showConfig,
+  setShowConfig,
+  gridVisible,
+  setGridVisible,
+  gizmoVisible,
+  setGizmoVisible,
+  collapsed,
+}: SidebarSettingsProps) {
+  if (collapsed) return null;
+  return (
+    <div
+      class={css({
+        mt: "auto",
+        position: "relative",
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+      })}
+    >
+      <button
+        class={css({
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          p: 1,
+          borderRadius: "sm",
+          _hover: { bg: "token(colors.bg.accent)" },
+          display: "flex",
+          alignItems: "center",
+          mb: 1,
+        })}
+        title="Settings"
+        onClick={() => setShowConfig(!showConfig)}
+      >
+        <i className="fa-solid fa-gear" style={{ fontSize: 18 }}></i>
+      </button>
+      {showConfig && (
+        <PanelConfig
+          gridVisible={gridVisible}
+          setGridVisible={setGridVisible}
+          gizmoVisible={gizmoVisible}
+          setGizmoVisible={setGizmoVisible}
+        />
+      )}
+    </div>
+  );
+}
+
+--- End of file: src/components/SidebarSettings.tsx ---
+
+src/components/SidebarContainer.tsx
+
+--- Start of file: src/components/SidebarContainer.tsx ---
+import { css } from "../../styled-system/css";
+import { ComponentChildren } from "preact";
+
+interface SidebarContainerProps {
+  collapsed: boolean;
+  setCollapsed: (v: boolean) => void;
+  children: ComponentChildren;
+}
+
+const SIDEBAR_BG_COLOR = "#bfc2d6";
+
+export function SidebarContainer({
+  collapsed,
+  setCollapsed,
+  children,
+}: SidebarContainerProps) {
+  function handleSidebarClick() {
+    if (collapsed) setCollapsed(false);
+  }
+  return (
+    <div
+      class={css({
+        padding: 4,
+        fontFamily: "system-ui",
+        color: "token(colors.text.DEFAULT)",
+        bg: SIDEBAR_BG_COLOR,
+        height: "100vh",
+        boxSizing: "border-box",
+        minWidth: 0,
+        width: collapsed ? "40px" : "300px",
+        transition: "width 0.3s cubic-bezier(.4,0,.2,1)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+        borderRight: "1px solid token(colors.border.DEFAULT)",
+        shadow: "card",
+        position: "relative",
+        overflow: "hidden",
+        cursor: collapsed ? "pointer" : undefined,
+      })}
+      onClick={handleSidebarClick}
+    >
+      {children}
+    </div>
+  );
+}
+
+--- End of file: src/components/SidebarContainer.tsx ---
+
+src/components/InputControl.tsx
+
+--- Start of file: src/components/InputControl.tsx ---
+import { css } from "../../styled-system/css";
+
+interface InputControlProps {
+  label: string;
+  id: string;
+  type?: string;
+  value?: string | number;
+  step?: number;
+  disabled?: boolean;
+  onChange: (e: Event) => void;
+  minWidthLabel?: string;
+  maxWidthLabel?: string;
+  minWidthInput?: string;
+  maxWidthInput?: string;
+}
+
+const DEFAULT_LABEL_MAX_WIDTH = "65%";
+const DEFAULT_INPUT_MAX_WIDTH = "35%";
+const DEFAULT_MIN_WIDTH = "0";
+
+export function InputControl({
+  label,
+  id,
+  type = "number",
+  value,
+  step,
+  disabled,
+  onChange,
+  minWidthLabel = DEFAULT_MIN_WIDTH,
+  maxWidthLabel = DEFAULT_LABEL_MAX_WIDTH,
+  minWidthInput = DEFAULT_MIN_WIDTH,
+  maxWidthInput = DEFAULT_INPUT_MAX_WIDTH,
+}: InputControlProps) {
+  return (
+    <div
+      class={css({
+        mb: 2,
+        display: "flex",
+        alignItems: "center",
+        width: "100%",
+        maxWidth: "100%",
+        gap: 1,
+      })}
+    >
+      <label
+        htmlFor={id}
+        class={css({
+          minWidth: minWidthLabel,
+          maxWidth: maxWidthLabel,
+          flex: 1,
+          fontWeight: "medium",
+          fontSize: "sm",
+          color: "token(colors.text.secondary)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        })}
+      >
+        {label}
+      </label>
+      <input
+        type={type}
+        id={id}
+        step={step}
+        // Note: For controlled inputs with Preact/React, you'd typically pass `value` prop.
+        // The current setup modifies DOM input value directly in panel.tsx's useSignalEffect.
+        // This component is structured to support that, but `value` prop is available if needed for controlled components.
+        onInput={onChange} // Changed from onInput to match original onPosChange
+        disabled={disabled}
+        class={css({
+          minWidth: minWidthInput,
+          maxWidth: maxWidthInput,
+          flex: 1,
+          fontSize: "sm",
+          ml: 1,
+          px: 1,
+          py: 1,
+          border: "1px solid token(colors.border.DEFAULT)",
+          borderRadius: "sm",
+          bg: "token(colors.bg.card)",
+          color: "token(colors.text.DEFAULT)",
+          _focus: {
+            border: "1px solid token(colors.border.focus)",
+            outline: "none",
+          },
+          transition: "border 0.2s",
+        })}
+      />
+    </div>
+  );
+}
+
+--- End of file: src/components/InputControl.tsx ---
+
+src/components/PanelConfig.tsx
+
+--- Start of file: src/components/PanelConfig.tsx ---
+import { css } from "../../styled-system/css";
+import { ToggleControl } from "./ToggleControl";
+
+interface PanelConfigProps {
+  gridVisible: boolean;
+  setGridVisible: (v: boolean) => void;
+  gizmoVisible: boolean;
+  setGizmoVisible: (v: boolean) => void;
+}
+
+export function PanelConfig({
+  gridVisible,
+  setGridVisible,
+  gizmoVisible,
+  setGizmoVisible,
+}: PanelConfigProps) {
+  return (
+    <div
+      class={css({
+        mt: 1,
+        p: 2,
+        border: "1px solid token(colors.border.DEFAULT)",
+        borderRadius: "sm",
+        bg: "token(colors.bg.card)",
+        boxShadow: "card",
+        minWidth: 0,
+        width: "100%",
+        maxWidth: "100%",
+      })}
+    >
+      <ToggleControl
+        label="Show Grid"
+        checked={gridVisible}
+        onChange={setGridVisible}
+        id="toggle-grid"
+      />
+      <ToggleControl
+        label="Show Viewport Gizmo"
+        checked={gizmoVisible}
+        onChange={setGizmoVisible}
+        id="toggle-gizmo"
+      />
+    </div>
+  );
+}
+
+--- End of file: src/components/PanelConfig.tsx ---
+
+src/components/ObjectProperties.tsx
+
+--- Start of file: src/components/ObjectProperties.tsx ---
+import { css } from "../../styled-system/css";
+import { InputControl } from "./InputControl";
+
+interface ObjectPropertiesProps {
+  selected: any;
+  onPosChange: (axis: string, e: Event) => void;
+}
+
+export function ObjectProperties({
+  selected,
+  onPosChange,
+}: ObjectPropertiesProps) {
+  return (
+    <div
+      id="object-properties-container"
+      class={css({
+        p: 2,
+        bg: "token(colors.bg.card)",
+        borderRadius: "md",
+        boxShadow: "card",
+      })}
+    >
+      <h3
+        class={css({
+          fontWeight: "extrabold",
+          fontSize: "xl",
+          mb: 2,
+          color: "token(colors.text.accent)",
+          letterSpacing: "wide",
+        })}
+      >
+        Properties
+      </h3>
+      <div
+        id="selected-object-name"
+        class={css({
+          mb: 2,
+          fontWeight: "bold",
+          fontSize: "lg",
+          color: "token(colors.text.accent)",
+        })}
+      >
+        {selected ? selected.name : "No object selected"}
+      </div>
+      {["x", "y", "z"].map((axis) => (
+        <InputControl
+          key={axis}
+          label={`Position ${axis.toUpperCase()}:`}
+          id={`pos-${axis}`}
+          type="number"
+          step={0.1}
+          onChange={(e: Event) => onPosChange(axis, e)}
+          disabled={!selected}
+        />
+      ))}
+    </div>
+  );
+}
+
+--- End of file: src/components/ObjectProperties.tsx ---
+

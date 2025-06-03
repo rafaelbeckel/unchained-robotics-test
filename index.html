@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Robot Cell Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
+  </head>
+  <body style="display: flex; height: 100vh; margin: 0">
+    <div
+      id="ui-panel"
+      style="
+        width: 300px;
+        background: #f4f4f4;
+        border-right: 1px solid #ccc;
+        overflow-y: auto;
+      "
+    ></div>
+    <div id="scene-container" style="flex: 1; position: relative"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
